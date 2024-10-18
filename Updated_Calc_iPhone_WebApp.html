@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="manifest" href="manifest.json">
+    
+    <title>Score Calculator with Round Multiplier</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .hidden { display: none; }
+        .player-input, .player { margin-bottom: 10px; }
+        .scores-table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        .scores-table th, .scores-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        .scores-table th { background-color: #f2f2f2; }
+        .section { margin-bottom: 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Score Calculator with Round Multiplier</h1>
+
+    <!-- Mode Selection Section -->
+    <div id="modeSelection" class="section">
+        <label>Select Scoring Mode:</label><br>
+        <input type="radio" id="modePoints" name="scoringMode" value="points" checked>
+        <label for="modePoints">Points</label><br>
+        <input type="radio" id="modeMultiplier" name="scoringMode" value="multiplier">
+        <label for="modeMultiplier">Multiplier</label><br>
+        <div id="multiplierInput" class="hidden">
+            <label for="pointValue">How much per point:</label>
+            <input type="number" id="pointValue" value="50" step="any">
+        </div>
+        <button onclick="proceedToPlayerSetup()">Next</button>
+    </div>
+
+    <!-- Player Setup Section -->
+    <div id="playerSetup" class="hidden section">
+        <label for="numPlayers">Number of Players (2-4):</label>
+        <input type="number" id="numPlayers" min="2" max="4" value="3">
+        <button onclick="setupPlayerNames()">Next</button>
+    </div>
+
+    <!-- Player Names Input Section -->
+    <div id="playerNamesSection" class="hidden section">
+        <h2>Enter Player Names</h2>
+        <div id="playerNamesInputs"></div>
+        <button onclick="initPlayers()">Start Game</button>
+    </div>
+
+    <!-- Score Input Section -->
+    <div id="scoreInput" class="hidden section">
+        <h2>Enter Scores for Round <span id="roundNumber">1</span></h2>
+        <div id="playerInputs"></div>
+        <label for="roundMultiplier">Round Multiplier:</label>
+        <select id="roundMultiplier">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+        </select>
+        <button onclick="addScores()">Add Scores</button>
+        <p id="errorMsg" class="error"></p>
+    </div>
+
+    <!-- Total Scores Display -->
+    <div class="hidden section" id="playerScores">
+        <h2>Total Scores</h2>
+        <ul id="scoreList"></ul>
+    </div>
+
+    <!-- Round History Display -->
+    <div class="hidden section" id="roundHistory">
+        <h2>Round History</h2>
+        <table class="scores-table" id="historyTable">
+            <thead>
+                <tr id="historyHeader">
+                    <th>Round</th>
+                    <th>Multiplier</th>
+                    <!-- Player names will be inserted here -->
+                </tr>
+            </thead>
+            <tbody id="historyBody">
+                <!-- Scores per round will be inserted here -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Save Data Section -->
+    <div class="hidden section" id="saveDataSection">
+        <button onclick="resetGame()">Reset Game</button>
+    </div>
+
+    <script>
+        var numPlayers = 2;
+        var playerTotals = [];
+        var playerNames = [];
+        var roundNumber = 1;
+        var rounds = []; // Array to store scores per round
+        var scoringMode = 'points';
+        var pointValue = 1;
+
+        // Load game data from LocalStorage on page load
+        window.onload = function() {
+            if (localStorage.getItem('gameData')) {
+                if (confirm('Do you want to continue your previous game?')) {
+                    loadGameData();
+                } else {
+                    localStorage.removeItem('gameData');
+                    // Optionally, you can reset variables here
+                }
+            }
+        };
+
+        function proceedToPlayerSetup() {
+            // Get selected scoring mode
+            var modeElements = document.getElementsByName('scoringMode');
+            for (var i = 0; i < modeElements.length; i++) {
+                if (modeElements[i].checked) {
+                    scoringMode = modeElements[i].value;
+                    break;
+                }
+            }
+
+            if (scoringMode === 'multiplier') {
+                var multiplierInput = document.getElementById('multiplierInput');
+                multiplierInput.classList.remove('hidden');
+                pointValue = parseFloat(document.getElementById('pointValue').value);
+                if (isNaN(pointValue) || pointValue <= 0) {
+                    alert('Please enter a valid positive number for "How much per point".');
+                    return;
+                }
+            } else {
+                pointValue = 1;
+            }
+
+            document.getElementById('modeSelection').classList.add('hidden');
+            document.getElementById('playerSetup').classList.remove('hidden');
+        }
+
+        function setupPlayerNames() {
+            numPlayers = parseInt(document.getElementById('numPlayers').value);
+            if (numPlayers < 2 || numPlayers > 4) {
+                alert('Please enter a number between 2 and 4');
+                return;
+            }
+            document.getElementById('playerSetup').classList.add('hidden');
+            document.getElementById('playerNamesSection').classList.remove('hidden');
+            document.getElementById('playerNamesInputs').innerHTML = '';
+            for (var i = 0; i < numPlayers; i++) {
+                var div = document.createElement('div');
+                div.className = 'player-input';
+                div.innerHTML = 'Player ' + (i + 1) + ' Name: <input type="text" id="playerName' + i + '" value="Player ' + (i + 1) + '">';
+                document.getElementById('playerNamesInputs').appendChild(div);
+            }
+        }
+
+        function initPlayers() {
+            playerTotals = [];
+            playerNames = [];
+            rounds = [];
+            roundNumber = 1;
+            document.getElementById('roundNumber').textContent = roundNumber;
+
+            for (var i = 0; i < numPlayers; i++) {
+                var name = document.getElementById('playerName' + i).value.trim();
+                if (name === '') {
+                    alert('Player names cannot be empty');
+                    return;
+                }
+                playerNames.push(name);
+                playerTotals.push(0);
+            }
+            document.getElementById('playerNamesSection').classList.add('hidden');
+            document.getElementById('scoreInput').classList.remove('hidden');
+            document.getElementById('playerScores').classList.remove('hidden');
+            document.getElementById('roundHistory').classList.remove('hidden');
+            document.getElementById('saveDataSection').classList.remove('hidden');
+
+            // Update the header of the history table with player names
+            var historyHeader = document.getElementById('historyHeader');
+            historyHeader.innerHTML = '<th>Round</th><th>Multiplier</th>'; // Reset header
+            for (var i = 0; i < numPlayers; i++) {
+                var th = document.createElement('th');
+                th.textContent = playerNames[i];
+                historyHeader.appendChild(th);
+            }
+
+            // Initialize player input fields
+            document.getElementById('playerInputs').innerHTML = '';
+            for (var i = 0; i < numPlayers; i++) {
+                var div = document.createElement('div');
+                div.className = 'player';
+                div.innerHTML = playerNames[i] + ': <input type="number" id="playerScore' + i + '" value="0">';
+                document.getElementById('playerInputs').appendChild(div);
+            }
+            updateScores();
+            saveGameData(); // Save initial game data
+        }
+
+        function addScores() {
+            var roundScores = [];
+            var roundSum = 0;
+            var errorMsg = document.getElementById('errorMsg');
+            errorMsg.textContent = ''; // Clear previous error messages
+
+            for (var i = 0; i < numPlayers; i++) {
+                var scoreInput = document.getElementById('playerScore' + i);
+                var score = parseFloat(scoreInput.value);
+                if (isNaN(score)) {
+                    alert('Please enter valid numbers for all scores');
+                    return;
+                }
+                roundScores.push(score);
+                roundSum += score;
+            }
+
+            // Check if the sum of the round scores is zero
+            if (roundSum !== 0) {
+                errorMsg.textContent = 'The total score for this round must add up to zero. Currently, it adds up to ' + roundSum + '. Please adjust the scores.';
+                return;
+            }
+
+            // Retrieve the selected round multiplier
+            var roundMultiplier = parseInt(document.getElementById('roundMultiplier').value);
+
+            // If validation passes, update totals and history
+            for (var i = 0; i < numPlayers; i++) {
+                var adjustedScore = roundScores[i] * pointValue * roundMultiplier;
+                playerTotals[i] += adjustedScore;
+                document.getElementById('playerScore' + i).value = '0';
+            }
+
+            // Store the round scores and multiplier
+            rounds.push({
+                scores: roundScores,
+                multiplier: roundMultiplier
+            });
+
+            updateScores();
+            updateRoundHistory();
+            roundNumber++;
+            document.getElementById('roundNumber').textContent = roundNumber;
+
+            // Save game data after each round
+            saveGameData();
+        }
+
+        function updateScores() {
+            var scoreList = document.getElementById('scoreList');
+            scoreList.innerHTML = '';
+            for (var i = 0; i < numPlayers; i++) {
+                var li = document.createElement('li');
+                li.textContent = playerNames[i] + ': ' + playerTotals[i].toFixed(2);
+                scoreList.appendChild(li);
+            }
+        }
+
+        function updateRoundHistory() {
+            var historyBody = document.getElementById('historyBody');
+            historyBody.innerHTML = '';
+
+            // First, add total standings at the top
+            var trTotal = document.createElement('tr');
+            var totalCell = document.createElement('td');
+            totalCell.textContent = 'Total'; // Total heading
+            trTotal.appendChild(totalCell);
+
+            // Empty cell for the multiplier column
+            var emptyCell = document.createElement('td');
+            trTotal.appendChild(emptyCell);
+
+            // Add total scores for each player
+            for (var p = 0; p < numPlayers; p++) {
+                var tdTotal = document.createElement('td');
+                tdTotal.textContent = playerTotals[p].toFixed(2); // Show total score
+                trTotal.appendChild(tdTotal);
+            }
+            historyBody.appendChild(trTotal);
+            for (var r = 0; r < rounds.length; r++) {
+                var tr = document.createElement('tr');
+                var roundCell = document.createElement('td');
+                roundCell.textContent = r + 1;
+                tr.appendChild(roundCell);
+
+                var multiplierCell = document.createElement('td');
+                multiplierCell.textContent = rounds[r].multiplier;
+                tr.appendChild(multiplierCell);
+
+                for (var p = 0; p < numPlayers; p++) {
+                    var td = document.createElement('td');
+                    var displayedScore = rounds[r].scores[p];
+                    var adjustedScore;
+                    if (scoringMode === 'multiplier') {
+                        adjustedScore = rounds[r].scores[p] * pointValue * rounds[r].multiplier;
+                    } else {
+                        adjustedScore = rounds[r].scores[p] * rounds[r].multiplier;
+                    }
+                    displayedScore += ' (' + adjustedScore.toFixed(2) + ')';
+                    td.textContent = displayedScore;
+                    tr.appendChild(td);
+                }
+                historyBody.appendChild(tr);
+            }
+        }
+
+        function saveGameData() {
+            var gameData = {
+                scoringMode: scoringMode,
+                pointValue: pointValue,
+                numPlayers: numPlayers,
+                playerNames: playerNames,
+                playerTotals: playerTotals,
+                rounds: rounds,
+                roundNumber: roundNumber
+            };
+            localStorage.setItem('gameData', JSON.stringify(gameData));
+        }
+
+        function loadGameData() {
+            var savedData = localStorage.getItem('gameData');
+            if (savedData) {
+                var gameData = JSON.parse(savedData);
+                // Restore variables
+                scoringMode = gameData.scoringMode;
+                pointValue = gameData.pointValue;
+                numPlayers = gameData.numPlayers;
+                playerNames = gameData.playerNames;
+                playerTotals = gameData.playerTotals;
+                rounds = gameData.rounds;
+                roundNumber = gameData.roundNumber;
+                // Restore game state
+                restoreGameState();
+            }
+        }
+
+        function restoreGameState() {
+            // Hide initial sections
+            document.getElementById('modeSelection').classList.add('hidden');
+            document.getElementById('playerSetup').classList.add('hidden');
+            document.getElementById('playerNamesSection').classList.add('hidden');
+            // Show game sections
+            document.getElementById('scoreInput').classList.remove('hidden');
+            document.getElementById('playerScores').classList.remove('hidden');
+            document.getElementById('roundHistory').classList.remove('hidden');
+            document.getElementById('saveDataSection').classList.remove('hidden');
+
+            // Update the header of the history table with player names
+            var historyHeader = document.getElementById('historyHeader');
+            historyHeader.innerHTML = '<th>Round</th><th>Multiplier</th>'; // Reset header
+            for (var i = 0; i < numPlayers; i++) {
+                var th = document.createElement('th');
+                th.textContent = playerNames[i];
+                historyHeader.appendChild(th);
+            }
+
+            // Initialize player input fields
+            document.getElementById('playerInputs').innerHTML = '';
+            for (var i = 0; i < numPlayers; i++) {
+                var div = document.createElement('div');
+                div.className = 'player';
+                div.innerHTML = playerNames[i] + ': <input type="number" id="playerScore' + i + '" value="0">';
+                document.getElementById('playerInputs').appendChild(div);
+            }
+
+            // Update the round number
+            document.getElementById('roundNumber').textContent = roundNumber;
+            // Update the scores and round history displays
+            updateScores();
+            updateRoundHistory();
+        }
+
+        function resetGame() {
+            if (confirm('Are you sure you want to reset the game? This will erase all saved data.')) {
+                localStorage.removeItem('gameData');
+                location.reload();
+            }
+        }
+
+        // Event listener for scoring mode change
+        var modeElements = document.getElementsByName('scoringMode');
+        for (var i = 0; i < modeElements.length; i++) {
+            modeElements[i].addEventListener('change', function() {
+                var multiplierInput = document.getElementById('multiplierInput');
+                if (document.getElementById('modeMultiplier').checked) {
+                    multiplierInput.classList.remove('hidden');
+                } else {
+                    multiplierInput.classList.add('hidden');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
